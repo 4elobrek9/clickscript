@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# PointRunner build output
+/pointrunner.exe
+/pointrunner.exe~
+/pointrunner-updated.exe
