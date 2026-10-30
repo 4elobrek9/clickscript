@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PointRunner settings</title>
+  <style>
+    :root { color-scheme: dark; font: 15px system-ui, sans-serif; --bg:#10141c; --fg:#e8edf5; --muted:#9daabd; --panel:#1a2230; --input:#121925; --border:#3a4659; --button:#263d5c; }
+    body { max-width: 1000px; margin: 30px auto; padding: 0 20px; background:var(--bg); color:var(--fg); }
+    body.light { color-scheme:light; --bg:#f4f6fa; --fg:#1a2230; --muted:#56647a; --panel:#fff; --input:#fff; --border:#bec8d6; --button:#d7e5f7; }
+    h1 { margin-bottom: 5px; } .muted { color: var(--muted); }
+    .warning { border-left: 4px solid #e6a23c; padding: 12px 16px; background: #2b2418; margin: 20px 0; }
+    .toolbar, .profilebar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
+    .point { display: grid; grid-template-columns: repeat(4, minmax(100px, 1fr)) auto; gap: 10px; background: var(--panel); padding: 14px; margin: 10px 0; border-radius: 8px; }
+    .point-title { grid-column:1/-1; display:flex; align-items:center; gap:8px; } .point-title strong { margin-right:auto; }
+    label { display: flex; flex-direction: column; gap: 5px; color: #aebbd0; font-size: 13px; }
+    input, select, button, pre { font: inherit; border-radius: 5px; border: 1px solid var(--border); padding: 8px; background: var(--input); color: var(--fg); }
+    input[type=checkbox] { width: auto; } button { cursor: pointer; background: var(--button); } button:hover { filter:brightness(1.12); }
+    .mods { flex-direction: row; align-items: center; gap: 14px; padding-top: 21px; }
+    .mods label { flex-direction: row; align-items: center; }
+    #status { font-weight: 700; } #message { min-height: 1.4em; color: #f0bf74; }
+    @media (max-width: 700px) { .point { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <h1>PointRunner</h1>
+  <div class="toolbar"><div class="muted">Local settings • <span id="status">idle</span></div><button id="theme">Light theme</button></div>
+  <div class="warning"><strong>Testing only.</strong> Automated input may violate online-game terms of service or trigger anti-cheat systems. Do not use this tool in online games or to bypass anti-cheat protections.</div>
+  <div class="toolbar">
+    <button id="add">Add point</button><button id="pick">Pick exact point</button>
+    <button id="save">Save settings</button><button id="start">Start</button><button id="stop">Stop</button>
+    <button id="pause">Pause / resume</button>
+  </div>
+  <div id="points"></div>
+  <h2>Playback</h2>
+  <div class="toolbar">
+    <label><span><input id="loopEnabled" type="checkbox"> Repeat list</span></label>
+    <label>Iterations (ignored when infinite)<input id="iterations" type="number" min="1" value="1"></label>
+    <label><span><input id="infinite" type="checkbox"> Infinite</span></label>
+    <label><span><input id="hold" type="checkbox"> Hold mode (play while hotkey is held)</span></label>
+  </div>
+  <h2>Hotkey</h2>
+  <div class="toolbar">
+    <strong>Playback</strong>
+    <div class="mods">
+      <label><input id="ctrl" type="checkbox"> Ctrl</label><label><input id="alt" type="checkbox"> Alt</label>
+      <label><input id="shift" type="checkbox"> Shift</label><label><input id="win" type="checkbox"> Win</label>
+    </div>
+    <label>Key<input id="key" maxlength="3" value="H"></label>
+    <strong>Pick point</strong>
+    <div class="mods">
+      <label><input id="pCtrl" type="checkbox"> Ctrl</label><label><input id="pAlt" type="checkbox"> Alt</label>
+      <label><input id="pShift" type="checkbox"> Shift</label><label><input id="pWin" type="checkbox"> Win</label>
+    </div>
+    <label>Key<input id="pKey" maxlength="3" value="P"></label>
+    <span class="muted">Emergency stop: Ctrl+Alt+Esc (fixed).</span>
+  </div>
+  <h2>Text targets</h2>
+  <p class="muted">When a text step runs, PointRunner first searches the active window's accessibility tree (including browser page text such as “Slow download”), then falls back to Windows OCR on the full virtual screen. Keep the target window in the foreground. Leave Text blank to click the saved X/Y coordinate.</p>
+  <p class="muted">Point delays may be set to 0 ms; newly added points use zero delays.</p>
+  <h2>Profiles</h2>
+  <div class="profilebar">
+    <input id="profileName" placeholder="Profile name"><button id="saveProfile">Save profile</button>
+    <select id="profiles"></select><button id="loadProfile">Load profile</button><button id="deleteProfile">Delete profile</button>
+  </div>
+  <div id="message" role="status"></div>
+  <script>
+    const $ = id => document.getElementById(id);
+    let settings;
+    function say(text) { $("message").textContent = text; }
+    async function request(url, options = {}) {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    }
+    function render() {
+      $("points").replaceChildren(...settings.points.map((point, index) => {
+        const row = document.createElement("section"); row.className = "point";
+        const title = document.createElement("div"); title.className = "point-title";
+        const heading = document.createElement("strong"); heading.textContent = `Step ${index + 1}`;
+        const move = (offset, caption) => {
+          const button = document.createElement("button"); button.textContent = caption; button.disabled = index + offset < 0 || index + offset >= settings.points.length;
+          button.onclick = async () => {
+            const [selected] = settings.points.splice(index, 1); settings.points.splice(index + offset, 0, selected); render();
+            try { await save(); } catch (e) { say(e.message); }
+          };
+          return button;
+        };
+        title.append(heading, move(-1, "Move up"), move(1, "Move down"));
+        row.append(title);
+        const field = (label, key, type = "number") => {
+          const wrap = document.createElement("label"); wrap.textContent = label;
+          const input = document.createElement("input"); input.type = type;
+          input.value = point[key]; input.min = "0";
+          input.addEventListener("input", () => { point[key] = type === "number" ? Number(input.value) : input.value; });
+          wrap.append(input); return wrap;
+        };
+        row.append(field("X (ignored for text)", "x"), field("Y (ignored for text)", "y"), field("Delay before match/click (ms)", "prefix_ms"), field("Delay after click (ms)", "suffix_ms"));
+        const textField = document.createElement("label"); textField.textContent = "Click text in active window (optional)";
+        const textInput = document.createElement("input"); textInput.type = "text"; textInput.value = point.text || ""; textInput.placeholder = "e.g. Continue";
+        textInput.addEventListener("input", () => { point.text = textInput.value; });
+        textField.append(textInput); row.append(textField);
+        const kind = document.createElement("label"); kind.textContent = "Click type";
+        const select = document.createElement("select");
+        for (const value of ["left", "right", "double"]) { const option = document.createElement("option"); option.value = value; option.textContent = value; select.append(option); }
+        select.value = point.click; select.onchange = () => point.click = select.value; kind.append(select);
+        const repeats = field("Repeats", "repeats");
+        const remove = document.createElement("button"); remove.textContent = "Delete step"; remove.onclick = async () => {
+          settings.points.splice(index, 1); render();
+          try { await save(); } catch (e) { say(e.message); }
+        };
+        row.append(kind, repeats, remove); return row;
+      }));
+      $("loopEnabled").checked = settings.loop.enabled;
+      $("iterations").value = settings.loop.iterations || 1;
+      $("infinite").checked = settings.loop.infinite;
+      $("hold").checked = settings.hold;
+      for (const key of ["ctrl", "alt", "shift", "win"]) $(key).checked = settings.hotkey[key];
+      $("key").value = settings.hotkey.key;
+      for (const key of ["ctrl", "alt", "shift", "win"]) $("p" + key[0].toUpperCase() + key.slice(1)).checked = settings.picker_hotkey[key];
+      $("pKey").value = settings.picker_hotkey.key;
+    }
+    function collect() {
+      settings.loop = { enabled: $("loopEnabled").checked, iterations: Number($("iterations").value), infinite: $("infinite").checked };
+      settings.hold = $("hold").checked;
+      for (const key of ["ctrl", "alt", "shift", "win"]) settings.hotkey[key] = $(key).checked;
+      settings.hotkey.key = $("key").value.toUpperCase();
+      for (const key of ["ctrl", "alt", "shift", "win"]) settings.picker_hotkey[key] = $("p" + key[0].toUpperCase() + key.slice(1)).checked;
+      settings.picker_hotkey.key = $("pKey").value.toUpperCase();
+    }
+    async function reload() { settings = await request("/api/config"); render(); }
+    async function save() { collect(); settings = await request("/api/config", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(settings) }); render(); say("Settings saved."); }
+    $("add").onclick = async () => {
+      const screen = await request("/api/screen");
+      settings.points.push({ x: screen.x + Math.floor(screen.width / 2), y: screen.y + Math.floor(screen.height / 2), text: "", prefix_ms: 0, suffix_ms: 0, click: "left", repeats: 1 });
+      render();
+    };
+    $("pick").onclick = async () => { say("Click the exact screen point to add it. Press Esc to cancel."); try { settings = await request("/api/pick", {method:"POST"}); render(); say("Point added."); } catch (e) { say(e.message); } };
+    $("save").onclick = () => save().catch(e => say(e.message));
+    $("start").onclick = async () => { try { collect(); await save(); await request("/api/action/start", {method:"POST"}); } catch (e) { say(e.message); } };
+    $("stop").onclick = () => request("/api/action/stop", {method:"POST"}).catch(e => say(e.message));
+    $("pause").onclick = () => request("/api/action/pause", {method:"POST"}).catch(e => say(e.message));
+    $("saveProfile").onclick = async () => {
+      try { await save(); await request("/api/profiles", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name:$("profileName").value})}); await loadProfiles(); say("Profile saved."); }
+      catch (e) { say(e.message); }
+    };
+    async function loadProfiles() {
+      const names = await request("/api/profiles"); $("profiles").replaceChildren();
+      for (const name of names) { const option = document.createElement("option"); option.value = name; option.textContent = name; $("profiles").append(option); }
+      $("loadProfile").disabled = names.length === 0;
+      $("deleteProfile").disabled = names.length === 0;
+    }
+    $("loadProfile").onclick = async () => {
+      try { settings = await request("/api/profiles/" + encodeURIComponent($("profiles").value), {method:"POST"}); render(); say("Profile loaded."); }
+      catch (e) { say(e.message); }
+    };
+    $("deleteProfile").onclick = async () => {
+      const name = $("profiles").value;
+      if (!name || !confirm(`Delete profile "${name}"?`)) return;
+      try { await request("/api/profiles/" + encodeURIComponent(name), {method:"DELETE"}); await loadProfiles(); say("Profile deleted."); }
+      catch (e) { say(e.message); }
+    };
+    async function updateStatus() {
+      try {
+        const status = await request("/api/status");
+        $("status").textContent = status.state;
+        if (status.error) say(status.error);
+      } catch (_) {}
+    }
+    $("theme").onclick = () => {
+      document.body.classList.toggle("light");
+      const light = document.body.classList.contains("light");
+      localStorage.setItem("theme", light ? "light" : "dark");
+      $("theme").textContent = light ? "Dark theme" : "Light theme";
+    };
+    if (localStorage.getItem("theme") === "light") { document.body.classList.add("light"); $("theme").textContent = "Dark theme"; }
+    reload().then(loadProfiles).catch(e => say(e.message));
+    setInterval(updateStatus, 700);
+  </script>
+</body>
+</html>
