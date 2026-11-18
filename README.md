@@ -1,51 +1,81 @@
-# PointRunner
+# 🎯 PointRunner
 
-PointRunner is a Windows-only, multi-point click runner written in Go. It runs in the system tray and exposes settings at `http://127.0.0.1:8765`.
+**Кликер для Windows, который понимает текст на экране.**
 
-> **Testing only.** Automated input may violate online-game terms of service or trigger anti-cheat systems. Do not use PointRunner in online games or to bypass anti-cheat protections. The application is intended for testing your own desktop software and repetitive local tasks.
+Не просто «кликни в точку 500×300», а «кликни по надписи *Slow download*» — даже если кнопка переехала. Живёт в трее, настраивается в браузере, написан на Go без единой тяжёлой зависимости.
 
-## Features
+![Windows](https://img.shields.io/badge/Windows-only-0078D6?logo=windows&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
+![CGO](https://img.shields.io/badge/CGO-not%20required-2ea44f)
 
-- Sequential screen points with before/after delays, left/right/double clicks, and per-point repeats.
-- List playback once, a fixed number of iterations, or infinitely; optional hold-to-run mode.
-- **Smooth movement mode**: Gradually move cursor to target over configurable duration (500-3000ms) with human-like random deviations and jitter. Final click executed at destination. Old instant-click mode remains default.
-- Global low-level keyboard hook: `Ctrl+Alt+H` starts/stops playback, `Ctrl+Alt+P` picks a screen point, and `Ctrl+Alt+Esc` is the fixed emergency stop.
-- Multi-monitor point picking and validation over the virtual desktop.
-- Optional text targets search the foreground window's accessibility tree first (including browser page text), with full virtual-desktop OCR as a fallback.
-- Reorder or delete steps; save, load, and delete JSON profiles.
-- Tray controls for start/stop, pause/resume, and opening settings.
-- `SendInput` absolute mouse input and a 1 ms Windows timer-period request.
+> ⚠️ **Только для тестирования.** Автоматизация ввода может нарушать правила онлайн-игр и триггерить античит. PointRunner — для тестов **своего** десктопного софта и рутинных локальных задач. Не используйте его в онлайн-играх.
 
-## Build and test
+<!-- 📸 ![Настройки](docs/settings.png) -->
 
-Install Go 1.22 or newer, then run in PowerShell:
+## Что умеет
+
+- 🖱️ **Сценарии из точек:** задержки до/после, левый/правый/двойной клик, повторы на каждую точку.
+- 🔁 **Режимы проигрывания:** один раз, N раз, бесконечно или «пока держу клавишу».
+- 🌊 **Плавное движение:** курсор едет к цели 500–3000 мс с человеческими отклонениями (мгновенный режим — по умолчанию).
+- 🔤 **Клик по тексту:** сначала ищет надпись в дереве доступности активного окна (видит даже текст страниц в браузере), затем — Windows OCR по всему виртуальному рабочему столу.
+- 🖥️ **Мультимонитор:** корректные координаты и DPI на всех экранах, включая отрицательные.
+- 💾 **Профили:** сохраняй, загружай, удаляй сценарии в JSON.
+- ⌨️ **Глобальные хоткеи** + аварийная остановка, которая работает всегда.
+
+## 🚀 Сборка и запуск
+
+Нужен [Go 1.22+](https://go.dev/dl/). В PowerShell:
 
 ```powershell
-.\build.ps1
-go test ./...
+.\build.ps1      # соберёт pointrunner.exe (без консольного окна)
+go test ./...    # тесты
 ```
 
-The build produces `pointrunner.exe` without a console window. No CGO is required.
+Запусти `pointrunner.exe` → иконка в трее → **Settings** откроется на `http://127.0.0.1:8765` (сервер слушает только localhost — наружу ничего не торчит).
 
-## Use
+## 📖 Первый сценарий за 2 минуты
 
-Launch `pointrunner.exe`; open its settings from the tray menu at `http://127.0.0.1:8765`. Add points manually or choose **Pick exact point** and click the desired screen coordinate. Edit each point's before/after delays (zero is allowed), click type, and repeats. Use **Move up/Move down** to change the playback order, and **Delete step** to remove a point. Save settings when finished. Profiles can be saved, loaded, and deleted in the Profiles controls.
+1. В настройках нажми **Pick exact point** (или `Ctrl+Alt+P`) и кликни в нужное место экрана.
+2. Настрой задержки, тип клика и повторы. Добавь ещё точки, меняй порядок кнопками **Move up/down**.
+3. Сохрани профиль, чтобы не потерять сценарий.
+4. `Ctrl+Alt+H` — старт/стоп. Всё.
 
-To click text that moves on the screen, add a point and fill **Click text in active window** with the phrase to match (for example, `Slow download`). Keep the target application or browser page in the foreground while playback runs. PointRunner first searches the foreground window's Windows UI Automation accessibility tree and clicks the center of a matching text element; this can find page text such as `<span>Slow download</span>` even when OCR cannot read the rendered pixels. If the accessibility tree has no match, it captures the entire virtual desktop in physical pixels and falls back to Windows OCR. Secondary displays with negative or offset coordinates are included; per-monitor DPI awareness keeps OCR coordinates and clicks in the same coordinate system. Install a Windows OCR language pack for the language displayed on screen. If the target is not found, playback stops and logs the accessibility-tree result or OCR screen bounds and recognized text. Keep **Text** empty to click the saved X/Y coordinates instead.
+### Кнопка «убегает»? Кликай по тексту
 
-Playback and picker hotkeys are configurable in settings. In hold mode, playback continues only while the configured playback hotkey is held. `Ctrl+Alt+Esc` stops playback regardless of the configured hotkey.
+В точке заполни поле **Click text in active window**, например `Slow download`, и держи целевое окно на переднем плане. PointRunner найдёт элемент через UI Automation (работает даже с `<span>` на веб-странице, который OCR не читает), а если не найдёт — сделает снимок всех экранов и распознает текст через Windows OCR. Не нашёл — честно остановится и запишет в лог, что именно распознал.
 
-Configuration and diagnostics are stored under `%APPDATA%\pointrunner\`:
+> Для OCR нужен языковой пакет Windows для языка текста на экране.
 
-- `config.json` — active settings
-- `profiles\*.json` — saved profiles
-- `log.txt` — timestamped startup/shutdown, hotkey, tray, configuration/profile, playback-step, click, HTTP API, and WinAPI diagnostics. Text searches log the accessibility-tree match/window/coordinates or OCR target, virtual-screen dimensions, elapsed time, every recognized line with its screen coordinates, and whether/how it matched. The active log is capped at 5 MB with three rotated backups (`log.txt.1` through `log.txt.3`).
-- `debug\last-ocr-failure.bmp` — overwritten with the most recent full virtual-desktop capture when an OCR search fails. The image may contain sensitive screen content; inspect and delete it when no longer needed. Successful OCR searches do not retain a screenshot.
+## ⌨️ Хоткеи
 
-The HTTP server binds only to loopback. Keep the application private to your local machine.
+| Клавиши | Действие |
+|---|---|
+| `Ctrl+Alt+H` | Старт / стоп (в hold-режиме — играть, пока держишь) |
+| `Ctrl+Alt+P` | Захватить точку экрана |
+| `Ctrl+Alt+Esc` | 🛑 Аварийная остановка — не переназначается |
 
-OCR recognizes text, not the appearance of buttons or images. If the target is an image or OCR cannot read its label, use a fixed screen point; the failure screenshot and complete OCR lines in `log.txt` can help diagnose what Windows recognized.
+Хоткеи старта и захвата меняются в настройках.
 
-## License
+## 📂 Данные и диагностика
 
-MIT; see [LICENSE](LICENSE).
+Всё в `%APPDATA%\pointrunner\`:
+
+| Файл | Что внутри |
+|---|---|
+| `config.json` | активные настройки |
+| `profiles\*.json` | сохранённые сценарии |
+| `log.txt` | клики, хоткеи, результаты поиска текста (5 МБ + 3 ротации) |
+| `debug\last-ocr-failure.bmp` | снимок экрана при неудачном OCR — **может содержать личные данные**, удаляй после диагностики |
+
+## ❓ FAQ
+
+- **OCR не находит надпись?** Проверь языковой пакет, посмотри `log.txt` (там все распознанные строки с координатами) и failure-скриншот. Картинки и иконки OCR не читает — для них используй фиксированную точку.
+- **Нужен ли админ?** Для кликов в окнах с повышенными правами — да, как и любому кликеру.
+- **Это точно не для игр?** Точно. См. предупреждение выше.
+
+---
+
+**English TL;DR:** Windows-only multi-point click runner in Go. Tray app, settings at `http://127.0.0.1:8765`. Per-point delays/repeats/click types, once/N/infinite/hold playback, human-like smooth movement, text-target clicking via UI Automation with Windows OCR fallback, multi-monitor + DPI aware, JSON profiles. Hotkeys: `Ctrl+Alt+H` run/stop, `Ctrl+Alt+P` pick point, `Ctrl+Alt+Esc` emergency stop. Build: `.\build.ps1` (Go 1.22+, no CGO). **For testing your own software only — not for online games.**
+
+Лицензия — [MIT](LICENSE).
